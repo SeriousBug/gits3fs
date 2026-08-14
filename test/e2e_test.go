@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -19,13 +20,24 @@ import (
 // binDir holds the git-s3fs binary built for the test run.
 var binDir string
 
+// binName is the file name of the built binary; Windows will not execute it
+// without the extension.
+var binName = "git-s3fs" + exeSuffix()
+
+func exeSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
+}
+
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "gits3fs-bin-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	build := exec.Command("go", "build", "-o", filepath.Join(dir, "git-s3fs"), "../cmd/git-s3fs")
+	build := exec.Command("go", "build", "-o", filepath.Join(dir, binName), "../cmd/git-s3fs")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "building git-s3fs: %v\n%s", err, out)
@@ -93,7 +105,7 @@ func (f *fixture) tryRun(dir string, extraEnv []string, name string, args ...str
 	// point at the freshly built binary directly. Anything git spawns still
 	// finds it through the PATH we set below.
 	if name == "git-s3fs" {
-		name = filepath.Join(binDir, name)
+		name = filepath.Join(binDir, binName)
 	}
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir

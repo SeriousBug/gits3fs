@@ -22,8 +22,24 @@ size 4823104
 
 ## Install
 
-Pre-built binaries are on the [releases page](https://github.com/SeriousBug/gits3fs/releases).
-Put `git-s3fs` anywhere on your `PATH` and git will expose it as `git s3fs`.
+Linux, macOS, FreeBSD, or Windows via Git Bash/WSL:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/SeriousBug/gits3fs/main/install.sh | sh
+```
+
+Windows via PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/SeriousBug/gits3fs/main/install.ps1 | iex
+```
+
+Either script downloads the right binary for your platform from the
+[releases page](https://github.com/SeriousBug/gits3fs/releases) and puts it
+on your `PATH`, so git can find it as `git s3fs`.
+
+You can also grab a binary from the releases page yourself and put
+`git-s3fs` anywhere on your `PATH`.
 
 From source:
 

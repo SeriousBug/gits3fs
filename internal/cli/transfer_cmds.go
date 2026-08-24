@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/SeriousBug/gits3fs/internal/config"
 	"github.com/SeriousBug/gits3fs/internal/scan"
@@ -58,16 +59,20 @@ func cmdPush(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return e.push(ctx, revs, *dryRun)
+	return e.push(ctx, revs, *dryRun, false)
 }
 
-func (e *env) push(ctx context.Context, revs []string, dryRun bool) error {
+// quiet suppresses all output unless there is something to upload, so a push
+// that touches no tracked files says nothing at all.
+func (e *env) push(ctx context.Context, revs []string, dryRun, quiet bool) error {
 	items, err := e.itemsFromRevs(revs)
 	if err != nil {
 		return err
 	}
 	if len(items) == 0 {
-		fmt.Println("Nothing to upload.")
+		if !quiet {
+			fmt.Println("Nothing to upload.")
+		}
 		return nil
 	}
 	mgr, err := e.manager(ctx)
@@ -78,14 +83,31 @@ func (e *env) push(ctx context.Context, revs []string, dryRun bool) error {
 	if dryRun {
 		verb = "Would upload"
 	}
-	fmt.Fprintf(os.Stderr, "%s to %s\n", verb, mgr.Primary().Describe())
+	header := func() {
+		fmt.Fprintf(os.Stderr, "%s to %s\n", verb, mgr.Primary().Describe())
+	}
+	report := reporter(verb)
+	if quiet {
+		var once sync.Once
+		inner := report
+		report = func(ev transfer.Event) {
+			if !ev.Skipped {
+				once.Do(header)
+			}
+			inner(ev)
+		}
+	} else {
+		header()
+	}
 
-	result, err := mgr.Push(ctx, items, dryRun, reporter(verb))
+	result, err := mgr.Push(ctx, items, dryRun, report)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "%s %d object(s), %s; %d already present.\n",
-		strings.TrimSuffix(verb, "ing")+"ed", result.Transferred, config.FormatSize(result.Bytes), result.Skipped)
+	if !quiet || result.Transferred > 0 || result.Err() != nil {
+		fmt.Fprintf(os.Stderr, "%s %d object(s), %s; %d already present.\n",
+			strings.TrimSuffix(verb, "ing")+"ed", result.Transferred, config.FormatSize(result.Bytes), result.Skipped)
+	}
 	return result.Err()
 }
 
@@ -320,7 +342,7 @@ func cmdPrePush(ctx context.Context, args []string) error {
 	if remote != "" {
 		revs = append(revs, "--not", "--remotes="+remote)
 	}
-	return e.push(ctx, revs, false)
+	return e.push(ctx, revs, false, true)
 }
 
 const usageHook = `

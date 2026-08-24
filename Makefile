@@ -39,7 +39,7 @@ check: fmtcheck vet test
 
 # Cross compiled release binaries. No cgo means every target is a plain
 # `go build` with GOOS and GOARCH set.
-PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 freebsd/amd64
+PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 freebsd/amd64 freebsd/arm64
 
 .PHONY: dist
 dist:

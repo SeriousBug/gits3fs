@@ -266,6 +266,56 @@ func (m *Manager) Fetch(ctx context.Context, items []Item, report Reporter) (Res
 	})
 }
 
+// Present reports which of the given objects already exist in the bucket, so
+// that callers can decide about local copies without asking one at a time.
+func (m *Manager) Present(ctx context.Context, oids []string) (map[string]bool, error) {
+	if m.primary == nil {
+		return nil, errors.New("no bucket configured; run `git s3fs init --bucket <name> --region <region>`")
+	}
+	concurrency := m.cfg.Concurrency
+	if concurrency < 1 {
+		concurrency = config.DefaultConcurrency
+	}
+
+	var (
+		mu     sync.Mutex
+		wg     sync.WaitGroup
+		found  = make(map[string]bool, len(oids))
+		failed int
+		first  error
+	)
+	sem := make(chan struct{}, concurrency)
+	for _, oid := range oids {
+		if err := ctx.Err(); err != nil {
+			wg.Wait()
+			return nil, err
+		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(oid string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			has, _, err := m.primary.Has(ctx, oid)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				failed++
+				if first == nil {
+					first = err
+				}
+				return
+			}
+			found[oid] = has
+		}(oid)
+	}
+	wg.Wait()
+	if failed > 0 {
+		return nil, fmt.Errorf("%d of %d object(s) could not be checked: %w", failed, len(oids), first)
+	}
+	return found, nil
+}
+
 func (m *Manager) run(ctx context.Context, items []Item, report Reporter, fn func(context.Context, Item) (bool, int64, error)) (Result, error) {
 	concurrency := m.cfg.Concurrency
 	if concurrency < 1 {

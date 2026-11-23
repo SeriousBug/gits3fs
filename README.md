@@ -109,6 +109,7 @@ from.
 | Concurrency | `s3fs.concurrency` | `GITS3FS_CONCURRENCY` | How many files to transfer at once (default 8) |
 | Part size | `s3fs.chunkSize` | `GITS3FS_CHUNK_SIZE` | Upload chunk size for large files (default 16 MiB) |
 | Lazy | `s3fs.lazy` | `GITS3FS_LAZY` | Skip downloading files on checkout until you actually need them |
+| Prune age | `s3fs.pruneAge` | `GITS3FS_PRUNE_AGE` | How much committed history `prune` keeps cached (default 7 days) |
 
 If you change any settings locally, run `git s3fs doctor` afterward to make
 sure everything is still configured correctly.
@@ -168,6 +169,36 @@ works the same either way.
 | `git s3fs env` | Show your current settings and where each one comes from |
 
 Run `git s3fs help <command>` for details.
+
+## Local disk use
+
+Git only ever holds a pointer for a tracked file. The file itself lives in
+`.git/s3fs/objects` until you run `git s3fs prune`, the same way git-lfs keeps
+its copy in `.git/lfs/objects`. That copy is what `git s3fs push` uploads and
+what `git s3fs checkout` restores, so it appears as soon as you `git add` a
+large file.
+
+`git s3fs prune` keeps the objects this repository still needs and drops the
+rest:
+
+- files in your working tree and index
+- the tip of every branch, tag and remote
+- commits from the last `s3fs.pruneAge` (7 days by default)
+- commits you have not pushed anywhere
+- commits you can still recover from the reflog
+- stashes
+
+Older versions stay in the bucket, so `git s3fs pull` brings one back if you
+check out a commit that needs it. Pruning nothing it cannot fetch again is the
+default: an object is only deleted once the bucket confirms it has it, so a
+cached file that never made it to the bucket is kept. `--force` overrides that
+check, and `--all` keeps every commit's objects, however old.
+
+```sh
+git s3fs prune --dry-run        # what would go, and how much it frees
+git s3fs prune                  # free it
+git s3fs prune --age 30d        # keep a month of history cached
+```
 
 ## Converting an existing repository
 

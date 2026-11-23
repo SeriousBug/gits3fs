@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeRepoFile(t *testing.T, body string) string {
@@ -233,5 +234,76 @@ func TestFormatSize(t *testing.T) {
 		if got := FormatSize(in); got != want {
 			t.Errorf("FormatSize(%d) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestParseDuration(t *testing.T) {
+	cases := map[string]time.Duration{
+		"12h":  12 * time.Hour,
+		"7d":   7 * 24 * time.Hour,
+		"1.5d": 36 * time.Hour,
+		"2w":   14 * 24 * time.Hour,
+		"90m":  90 * time.Minute,
+		"0":    0,
+	}
+	for in, want := range cases {
+		got, err := ParseDuration(in)
+		if err != nil {
+			t.Errorf("ParseDuration(%q): %v", in, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("ParseDuration(%q) = %v, want %v", in, got, want)
+		}
+	}
+	for _, bad := range []string{"", "-1d", "7", "days", "3x"} {
+		if _, err := ParseDuration(bad); err == nil {
+			t.Errorf("ParseDuration(%q) should have failed", bad)
+		}
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	for in, want := range map[time.Duration]string{
+		0:                  "all history",
+		24 * time.Hour:     "1 day",
+		7 * 24 * time.Hour: "7 days",
+		36 * time.Hour:     "36h0m0s",
+	} {
+		if got := FormatDuration(in); got != want {
+			t.Errorf("FormatDuration(%v) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestPruneAgeDefaultsAndOverrides(t *testing.T) {
+	c, err := Load(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PruneAge != DefaultPruneAge {
+		t.Errorf("PruneAge = %v, want %v", c.PruneAge, DefaultPruneAge)
+	}
+
+	dir := writeRepoFile(t, "[s3fs]\n\tpruneAge = 30d\n")
+	c, err = Load(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := 30 * 24 * time.Hour; c.PruneAge != want {
+		t.Errorf("PruneAge = %v, want %v", c.PruneAge, want)
+	}
+
+	c, err = Load(dir, func(key string) (string, bool) {
+		if key == "s3fs.pruneage" {
+			return "12h", true
+		}
+		return "", false
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PruneAge != 12*time.Hour {
+		t.Errorf("git config should win over the repo file, got %v", c.PruneAge)
 	}
 }

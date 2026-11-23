@@ -118,6 +118,7 @@ func cmdEnv(ctx context.Context, args []string) error {
 		{"concurrency", fmt.Sprint(c.Concurrency), c.SourceOf("concurrency").String()},
 		{"chunkSize", config.FormatSize(c.ChunkSize), c.SourceOf("chunksize").String()},
 		{"lazy", fmt.Sprint(c.Lazy), c.SourceOf("lazy").String()},
+		{"pruneAge", config.FormatDuration(c.PruneAge), c.SourceOf("pruneage").String()},
 	}
 	for _, r := range rows {
 		value := r[1]

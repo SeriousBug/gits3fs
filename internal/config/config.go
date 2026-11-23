@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Source records where a resolved value came from, so that commands such as
@@ -49,6 +50,7 @@ func (s Source) String() string {
 const (
 	DefaultConcurrency = 8
 	DefaultChunkSize   = 16 << 20 // 16 MiB multipart part size
+	DefaultPruneAge    = 7 * 24 * time.Hour
 )
 
 // Config is the resolved configuration for a repository.
@@ -91,6 +93,9 @@ type Config struct {
 	// so that a clone is fast and content is fetched later with
 	// `git s3fs pull`.
 	Lazy bool
+	// PruneAge is how much committed history `git s3fs prune` keeps cached.
+	// Zero means every commit ever made, so nothing reachable is dropped.
+	PruneAge time.Duration
 
 	// sources records the origin of each field, keyed by the canonical
 	// lowercase key name (for example "bucket" or "publicurl").
@@ -118,6 +123,7 @@ func Load(root string, gitConfig GitConfigLookup) (*Config, error) {
 	c := &Config{
 		Concurrency:    DefaultConcurrency,
 		ChunkSize:      DefaultChunkSize,
+		PruneAge:       DefaultPruneAge,
 		sources:        map[string]Source{},
 		repoFile:       repoFile,
 		repoFileExists: statErr == nil,
@@ -186,6 +192,14 @@ func fields() []field {
 			b, err := parseBool(v)
 			c.Lazy = b
 			return err
+		}},
+		{"pruneage", "GITS3FS_PRUNE_AGE", func(c *Config, v string) error {
+			d, err := ParseDuration(v)
+			if err != nil {
+				return fmt.Errorf("pruneage: %w", err)
+			}
+			c.PruneAge = d
+			return nil
 		}},
 	}
 }
@@ -292,6 +306,58 @@ func ParseSize(v string) (int64, error) {
 		return 0, fmt.Errorf("size must be positive, got %q", v)
 	}
 	return n * mult, nil
+}
+
+// ParseDuration accepts a retention window such as "72h", "7d" or "2w".
+// Days and weeks are accepted because that is how people state how much
+// history they want to keep. Zero means no limit.
+func ParseDuration(v string) (time.Duration, error) {
+	s := strings.TrimSpace(strings.ToLower(v))
+	if s == "" {
+		return 0, fmt.Errorf("empty duration")
+	}
+	unit := time.Duration(0)
+	switch {
+	case strings.HasSuffix(s, "w"):
+		unit, s = 7*24*time.Hour, strings.TrimSuffix(s, "w")
+	case strings.HasSuffix(s, "d"):
+		unit, s = 24*time.Hour, strings.TrimSuffix(s, "d")
+	}
+	if unit != 0 {
+		n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		if err != nil {
+			return 0, fmt.Errorf("%q is not a duration", v)
+		}
+		if n < 0 {
+			return 0, fmt.Errorf("duration cannot be negative, got %q", v)
+		}
+		return time.Duration(n * float64(unit)), nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a duration; use a number with a unit, such as 12h, 7d or 2w", v)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("duration cannot be negative, got %q", v)
+	}
+	return d, nil
+}
+
+// FormatDuration renders a retention window for humans, in days when it is a
+// whole number of them.
+func FormatDuration(d time.Duration) string {
+	switch {
+	case d == 0:
+		return "all history"
+	case d%(24*time.Hour) == 0:
+		days := int(d / (24 * time.Hour))
+		if days == 1 {
+			return "1 day"
+		}
+		return fmt.Sprintf("%d days", days)
+	default:
+		return d.String()
+	}
 }
 
 // FormatSize renders a byte count for humans.
